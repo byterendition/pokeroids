@@ -367,7 +367,7 @@
 
   // Shooting
   function shoot() {
-    if (paused) return;
+    if (paused || gameOver) return;
     const now = performance.now();
     if (now - lastShot < 160) return; // fire rate limit
     lastShot = now;
@@ -405,8 +405,10 @@
     bullets = [];
     particles = [];
   }
-  restartBtn.addEventListener('click', resetGame);
-  gameOverEl.addEventListener('click', resetGame);
+  restartBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    resetGame();
+  });
 
   // Start a fresh wave: reset HP, respawn chips, unpause
   function startNextWave() {
@@ -557,6 +559,9 @@
     
         if (hp <= 0) {
           gameOver = true;
+          paused = true;                 // freeze update()
+          isThrusting = false;           // optional: cut thrust immediately
+          thrustTouchId = null;          // optional: release touch
           gameOverEl.style.display = 'flex';
           break;
         }
