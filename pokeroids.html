@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Poker-Chips Asteroids</title>
+<style>
+  :root{
+    --topbar-h: calc(54px + env(safe-area-inset-top)); /* roomy and not too tall */
+  }
+  html, body { margin:0; height:100%; background:#ffffff; touch-action:none; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  
+  /* Top bar */
+  #topbar{
+    position:fixed; left:0; right:0; top:0;
+    height:var(--topbar-h);
+    padding-top:env(safe-area-inset-top);
+    background:linear-gradient(#0b3d91,#0a2f73);
+    color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+    z-index:10;
+  }
+  #topbar .title{
+    font-weight:800; letter-spacing:.4px;
+    font-size:clamp(16px, 3.2vmin, 28px);
+    text-shadow:0 2px 0 rgba(0,0,0,.2), 0 8px 18px rgba(0,0,0,.3);
+    white-space:nowrap;
+  }
+
+  #ui { position:fixed; left:0; right:0; bottom:0; top:var(--topbar-h); pointer-events:none; }
+  #hud {
+    position:absolute; left:12px; top:10px; padding:6px 10px; border-radius:10px;
+    background:rgba(0,0,0,0.06); color:#111; font-weight:600; letter-spacing:.3px;
+    pointer-events:none; user-select:none;
+  }
+  #shootBtn {
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:16px; width:min(22vmin,120px); height:min(22vmin,120px);
+    border-radius:50%; background:radial-gradient(circle at 35% 30%, #ff7a7a, #d40000 65%);
+    box-shadow:0 6px 18px rgba(212,0,0,.45), inset 0 6px 10px rgba(255,255,255,.5);
+    border:none; pointer-events:auto; touch-action:none;
+  }
+  #shootBtn:active { transform:translateX(-50%) scale(.98); }
+  #shootLabel {
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(16px + min(22vmin,120px) + 6px);
+    color:#b00; font-size:12px; font-weight:700; text-transform:uppercase; opacity:.7;
+    user-select:none; pointer-events:none;
+  }
+  #gameOver {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.08); backdrop-filter:saturate(120%) blur(2px); pointer-events:auto;
+  }
+  #gameOver .card {
+    background:#fff; border-radius:16px; padding:22px 24px; box-shadow:0 10px 30px rgba(0,0,0,.15);
+    text-align:center; max-width:min(92vw,420px);
+  }
+  #gameOver h1 { margin:0 0 8px; font-size:28px; color:#111; letter-spacing:.2px; }
+  #gameOver p { margin:0 0 14px; color:#333; }
+  #restart {
+    border:none; background:#111; color:#fff; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer;
+  }
+  canvas { display:block; width:100vw; height:calc(100vh - var(--topbar-h)); }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="title">Erik's card protector game</div>
+</div>
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <div id="hud">Health: <span id="hp">100</span></div>
+  <div id="shootLabel">Shoot</div>
+  <button id="shootBtn" aria-label="Shoot"></button>
+
+  <div id="gameOver">
+    <div class="card">
+      <h1>Game Over</h1>
+      <p>Your ship was turned into pocket change.</p>
+      <button id="restart">Play again</button>
+    </div>
+  </div>
+  
+  <div id="win" style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; background:rgba(0,0,0,.08); backdrop-filter:saturate(120%) blur(2px); pointer-events:auto;">
+    <div class="card" style="background:#fff; border-radius:16px; padding:22px 24px; box-shadow:0 10px 30px rgba(0,0,0,.15); text-align:center; max-width:min(92vw,420px);">
+      <h1 style="margin:0 0 8px; font-size:28px; color:#111; letter-spacing:.2px;">Wave cleared!</h1>
+      <p style="margin:0 0 14px; color:#333;">Click to refuel and face the next stack.</p>
+      <button id="nextWave" style="border:none; background:#111; color:#fff; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer;">Continue</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // === Canonical pip SVGs built from YOUR paths ===
+  const PIP_PATHS = {
+    // from id="rect3667" (club), black
+    club: {
+      d: `M 187.18045,250.38730 C 128.36658,222.29272 41.853278,255.80409 62.322215,331.39938 C 82.269329,405.06756 168.41270,388.90088 198.20103,344.05774 C 185.77375,429.08303 163.94868,442.32009 150.86716,460.77780 L 289.75116,460.77780 C 275.67939,441.03877 250.12745,429.08303 235.14277,342.89250 C 265.15914,387.66013 355.39576,403.17960 375.05465,330.57583 C 394.39333,259.15484 307.22109,218.48147 249.25365,250.81326 C 304.83892,213.48768 324.80092,90.899734 219.52258,90.899734 C 113.20501,90.899734 130.94375,215.88446 187.18045,250.38730 z`,
+      viewBox: `40 60 370 440`, fill: `#111`
+    },
+    // from id="path2076" (spade), black
+    spade: {
+      d: `M 462.29467,664.32769 C 340.21427,789.05002 459.88654,879.51934 556.40862,819.97420 C 538.18368,884.94243 528.16121,890.05448 517.09667,907.16383 L 621.31128,907.16383 C 607.93386,889.88674 593.88510,884.94243 579.65132,820.34400 C 678.19802,876.95357 782.06120,778.23048 672.71168,664.32769 C 601.19699,601.77310 573.43245,544.66342 567.50319,536.55402 C 561.81398,543.31064 528.29518,602.93370 462.29467,664.32769 z`,
+      viewBox: `430 500 400 450`, fill: `#111`
+    },
+    // from id="path30" (heart), red
+    heart: {
+      d: `M 216.50043,906.61239 C 216.15723,905.99414 214.68176,901.52418 213.22160,896.67911 C 203.96781,865.97319 186.78919,834.88002 158.02135,796.76700 C 147.21332,782.44803 137.04027,769.76836 109.53195,736.32989 C 77.680663,697.61227 68.557087,685.20914 59.344127,668.10174 C 53.903664,657.99946 48.265682,642.62811 46.410340,632.83915 C 44.556056,623.05587 44.525826,607.07238 46.345850,598.74964 C 53.749127,564.89549 83.820561,539.35493 119.77880,536.38086 C 160.97167,532.97385 196.01144,553.78323 214.42221,592.58758 L 218.53337,601.25265 L 221.62754,594.40729 C 226.22517,584.23584 230.65291,577.35650 238.12646,568.77315 C 257.15444,546.91951 279.80001,536.21452 307.08088,536.17707 C 319.30086,536.16032 326.30318,537.17456 336.71630,540.46962 C 352.29024,545.39773 364.01387,553.07492 374.45497,565.18276 C 401.66486,596.73613 398.44315,639.72269 364.92253,692.37036 C 357.10321,704.65146 342.99490,722.82236 323.59258,745.60159 C 301.24949,771.83343 290.33235,785.16501 279.15526,799.86674 C 252.36377,835.10678 234.34536,867.12695 224.43433,897.11016 C 222.92242,901.68408 221.33841,905.94614 220.91430,906.58141 C 219.92943,908.05665 217.31241,908.07502 216.50043,906.61239 z`,
+      viewBox: `20 500 390 450`, fill: `#d40000`
+    },
+    // from id="path2139" (diamond), red
+    diamond: {
+      d: `M 566.99914,90.003743 C 528.30104,154.40096 484.73668,216.34755 440.47717,275.84350 C 486.82222,335.33946 531.08175,397.28603 566.99914,461.68326 C 604.30691,396.06073 645.09054,333.50148 693.52113,275.84350 C 646.48090,216.34755 603.61174,153.17564 566.99914,90.003743 z`,
+      viewBox: `400 50 330 460`, fill: `#d40000`
+    }
+  };
+  
+  // build pip svg strings -> Image()s
+  function suitSVGFromPath(name) {
+    const p = PIP_PATHS[name];
+    return `
+    <svg xmlns="http://www.w3.org/2000/svg"
+         viewBox="${p.viewBox}"
+         preserveAspectRatio="xMidYMid meet"
+         width="100" height="100">
+      <path d="${p.d}" fill="${p.fill}" />
+    </svg>`;
+  }
+  
+  function svgToImage(svgString) {
+    const img = new Image();
+    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgString);
+    return img;
+  }
+  
+  // one-time images
+  const SUIT_IMAGES = {
+    heart: svgToImage(suitSVGFromPath('heart')),
+    diamond: svgToImage(suitSVGFromPath('diamond')),
+    club: svgToImage(suitSVGFromPath('club')),
+    spade: svgToImage(suitSVGFromPath('spade')),
+  };
+
+  // Canvas setup
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hudHP = document.getElementById('hp');
+  const btn = document.getElementById('shootBtn');
+  const gameOverEl = document.getElementById('gameOver');
+  const restartBtn = document.getElementById('restart');
+  const winEl = document.getElementById('win');
+  const nextWaveBtn = document.getElementById('nextWave');
+  
+  let paused = false;
+  
+  let W = 0, H = 0, DPR = Math.max(1, devicePixelRatio || 1);
+  function resize() {
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  addEventListener('resize', resize, {passive:true}); resize();
+
+  // Helpers
+  const TAU = Math.PI * 2;
+  const rand = (a,b) => a + Math.random()*(b-a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const wrap = (x, max) => (x < 0 ? x + max : (x > max ? x - max : x));
+  const dist2 = (ax, ay, bx, by) => { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; };
+
+  // Game state
+  const START_HP = 100;
+  const CHIP_SIZES = [
+    {name:'black', r: 48, dmg:50, color:'#111', ring:'#000'},
+    {name:'blue',  r: 34, dmg:30, color:'#1f6feb'},
+    {name:'green', r: 24, dmg:20, color:'#00a66f'},
+    {name:'red',   r: 16, dmg:10, color:'#d40000'}
+  ];
+  const DAMAGE_BY_NAME = { black:50, blue:30, green:20, red:10 };
+
+  let ship, chips, bullets, particles, hp, gameOver=false, lastShot=0;
+
+  // Ship
+  function spawnShip() {
+    ship = {
+      x: W/2, y: H/2, vx:0, vy:0, angle:0,
+      radius: 14, thrusting:false, thrustTimer:0
+    };
+  }
+
+  // Chips
+  function spawnChips(n=6) {
+    chips = [];
+    for (let i=0;i<n;i++) {
+      const s = 0; // start with largest
+      const speed = rand(0.4, 1.2) * (Math.random()<.5?-1:1);
+      const ang = rand(0, TAU);
+      const away = 120;
+      // Keep initial spawn away from ship
+      let x=rand(0,W), y=rand(0,H);
+      if (dist2(x,y, W/2,H/2) < (away*away)) { x = (x+W/2+away)%W; y = (y+H/2+away)%H; }
+      chips.push({
+        x, y, vx: Math.cos(ang)*speed, vy: Math.sin(ang)*speed,
+        rot: rand(0,TAU), rv: rand(-0.02,0.02),
+        sizeIndex: s
+      });
+    }
+  }
+
+  // Bullets (card suits)
+  const SUITS = ['heart','diamond','club','spade'];
+
+  // Particles (yellow lines for explosions + exhaust)
+  function spawnExplosion(x,y, count=18, speed=2.4) {
+    for(let i=0;i<count;i++){
+      const a = rand(0,TAU);
+      const v = rand(0.4, speed);
+      particles.push({
+        x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+        life: rand(0.3,0.6), maxLife:0.6, kind:'burst'
+      });
+    }
+  }
+  function spawnThrust(x,y, dirA) {
+    const a = dirA + Math.PI + rand(-0.35,0.35);
+    const v = rand(0.7, 1.6);
+    particles.push({
+      x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+      life: rand(0.25,0.45), maxLife:0.45, kind:'thrust'
+    });
+  }
+
+  // Rendering helpers
+  function drawShip(s) {
+    const {x,y,angle} = s;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(angle);
+    ctx.fillStyle = '#333'; // dark grey
+    ctx.beginPath();
+    ctx.moveTo(18,0); ctx.lineTo(-12,-10); ctx.lineTo(-12,10); ctx.closePath();
+    ctx.fill();
+
+    // thrust particles emission from tail while thrusting
+    if (s.thrusting) {
+      for (let i=0;i<2;i++) spawnThrust(x - Math.cos(angle)*14, y - Math.sin(angle)*14, angle);
+    }
+    ctx.restore();
+  }
+
+  function drawChip(chip) {
+    const s = CHIP_SIZES[chip.sizeIndex];
+    const r = s.r;
+    const main = s.color, ring = s.ring || s.color;
+
+    ctx.save();
+    ctx.translate(chip.x, chip.y);
+    ctx.rotate(chip.rot);
+
+    // Base disc
+    ctx.fillStyle = main;
+    ctx.beginPath(); ctx.arc(0,0,r,0,TAU); ctx.fill();
+
+    // white inner circle
+    ctx.fillStyle = '#eee';
+    ctx.beginPath(); ctx.arc(0,0,r*0.72,0,TAU); ctx.fill();
+
+    // inner dashed ring (like on real chips)
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#fff';
+    ctx.setLineDash([6,10]);
+    ctx.beginPath(); ctx.arc(0,0,r*0.55,0,TAU); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // wedge rectangles around rim
+    const wedges = 8;
+    ctx.fillStyle = '#fff';
+    for (let i=0;i<wedges;i++){
+      const a = i*(TAU/wedges);
+      ctx.save();
+      ctx.rotate(a);
+      ctx.fillRect(r*0.80, -r*0.10, r*0.20, r*0.20);
+      ctx.restore();
+    }
+
+    // edge shading ring
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.arc(0,0,r-2,0,TAU); ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawSuit(bulletOrName, x, y, a) {
+    const img = typeof bulletOrName === 'string'
+      ? SUIT_IMAGES[bulletOrName]
+      : bulletOrName.img;
+  
+    if (!img || !img.complete) return; // not ready yet
+  
+    const size = 28;       // bullet visual size
+    const hw = size/2, hh = size/2;
+  
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.drawImage(img, -hw, -hh, size, size);
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const t = p.life / p.maxLife;
+      const alpha = t;
+      ctx.strokeStyle = `rgba(255,210,0,${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx*4, p.y - p.vy*4);
+      ctx.stroke();
+    }
+  }
+
+  // Input
+  let thrustTouchId = null;
+  let isThrusting = false;
+  let thrustPoint = {x:0,y:0};
+  function beginThrust(x,y) {
+    isThrusting = true; thrustPoint.x=x; thrustPoint.y=y;
+  }
+  function endThrust() { isThrusting = false; }
+
+  // Touch for thrust (everywhere except shoot button)
+  canvas.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) {
+      const rect = btn.getBoundingClientRect();
+      const tx = t.clientX, ty = t.clientY;
+      const cx = clamp(tx, rect.left, rect.right), cy = clamp(ty, rect.top, rect.bottom);
+      const onShoot = (tx>=rect.left && tx<=rect.right && ty>=rect.top && ty<=rect.bottom);
+      if (!onShoot && thrustTouchId===null) { thrustTouchId = t.identifier; beginThrust(tx,ty); }
+    }
+  }, {passive:false});
+  canvas.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) if (t.identifier===thrustTouchId) { thrustPoint.x=t.clientX; thrustPoint.y=t.clientY; }
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchend', e => {
+    for (const t of e.changedTouches) if (t.identifier===thrustTouchId) { thrustTouchId=null; endThrust(); }
+  });
+  canvas.addEventListener('touchcancel', e => { if (thrustTouchId!==null) { thrustTouchId=null; endThrust(); }});
+
+  // Mouse thrust (desktop)
+  canvas.addEventListener('mousedown', e => { if (!pointInButton(e.clientX,e.clientY)) beginThrust(e.clientX,e.clientY); });
+  window.addEventListener('mousemove', e => { if (isThrusting) { thrustPoint.x=e.clientX; thrustPoint.y=e.clientY; }});
+  window.addEventListener('mouseup', endThrust);
+
+  function pointInButton(x,y){
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    const d2 = (x-cx)*(x-cx)+(y-cy)*(y-cy);
+    const R = r.width/2;
+    return d2 <= R*R;
+  }
+
+  // Shooting
+  function shoot() {
+    if (paused) return;
+    const now = performance.now();
+    if (now - lastShot < 160) return; // fire rate limit
+    lastShot = now;
+    const suitName = SUITS[Math.floor(Math.random()*SUITS.length)];
+    const suitImg  = SUIT_IMAGES[suitName];
+    const ang = Math.atan2(ship.vy, ship.vx) || ship.angle;
+    const speed = 6.0;
+    // CHANGED: random visual rotation + small angular velocity (spin)
+    const visualAngle = rand(0, TAU);
+    const angularVel = rand(-1.5, 1.5); // rad/s; gentle spin
+    bullets.push({
+      x: ship.x + Math.cos(ang)*18, y: ship.y + Math.sin(ang)*18,
+      vx: Math.cos(ang)*speed + ship.vx*0.4, vy: Math.sin(ang)*speed + ship.vy*0.4,
+      life: 1.2,
+      suit: suitName,
+      img: suitImg,              // << store the image
+      angle: rand(0, Math.PI*2), // random starting rotation
+      av: rand(-1.5, 1.5)        // gentle spin (rad/s)
+    });
+  }
+  btn.addEventListener('touchstart', e => { shoot(); e.preventDefault(); }, {passive:false});
+  btn.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+  btn.addEventListener('click', e => { shoot(); });
+
+  // Game lifecycle
+  function resetGame() {
+    hp = START_HP;
+    hudHP.textContent = hp;
+    gameOver = false;
+    paused = false;                 // NEW (win)
+    gameOverEl.style.display = 'none';
+    winEl.style.display = 'none';   // NEW (win)
+    spawnShip();
+    spawnChips(3);
+    bullets = [];
+    particles = [];
+  }
+  restartBtn.addEventListener('click', resetGame);
+  gameOverEl.addEventListener('click', resetGame);
+
+  // Start a fresh wave: reset HP, respawn chips, unpause
+  function startNextWave() {
+    hp = START_HP;
+    hudHP.textContent = hp;
+    bullets = [];          // optional: clear stray bullets
+    particles = [];        // optional: clear residual sparks
+    spawnChips(3);
+    winEl.style.display = 'none';
+    paused = false;
+  }
+  nextWaveBtn.addEventListener('click', e => {
+    e.stopPropagation();           // optional, tidy
+    startNextWave();
+  });
+  
+  // Physics + collisions
+  function update(dt) {
+    // Ship thrust toward / away from touch: "press somewhere -> add force opposite direction"
+    if (isThrusting || thrustTouchId!==null) {
+      ship.thrusting = true;
+      const dx = thrustPoint.x - ship.x, dy = thrustPoint.y - ship.y;
+      const a = Math.atan2(dy, dx) + Math.PI; // opposite
+      const F = 14; // acceleration px/s^2
+      ship.vx += Math.cos(a) * F * dt;
+      ship.vy += Math.sin(a) * F * dt;
+      ship.thrustTimer += dt;
+    } else {
+      ship.thrusting = false;
+      ship.thrustTimer = Math.max(0, ship.thrustTimer - dt);
+    }
+
+    // Natural damping
+    ship.vx *= 0.995; ship.vy *= 0.995;
+
+    // Update position
+    ship.x += ship.vx; ship.y += ship.vy;
+
+    // Face the motion direction if moving, else keep last angle
+    if (Math.hypot(ship.vx, ship.vy) > 0.01) ship.angle = Math.atan2(ship.vy, ship.vx);
+
+    // Wrap ship
+    ship.x = wrap(ship.x, W); ship.y = wrap(ship.y, H);
+
+    // Update chips
+    for (const c of chips) {
+      c.x += c.vx; c.y += c.vy; c.rot += c.rv;
+      c.x = wrap(c.x, W); c.y = wrap(c.y, H);
+    }
+
+    // Update bullets
+    for (const b of bullets) {
+      b.x += b.vx; b.y += b.vy; b.life -= dt;
+      b.angle += (b.av || 0) * dt;           // CHANGED: apply spin
+      b.x = wrap(b.x, W); b.y = wrap(b.y, H);
+    }
+    bullets = bullets.filter(b => b.life > 0);
+
+    // Update particles
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy; p.life -= dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    // Bullet-chip collisions
+    const newChips = [];
+    for (let i=chips.length-1;i>=0;i--){
+      const c = chips[i];
+      let hit = false;
+      for (let j=bullets.length-1;j>=0;j--){
+        const b = bullets[j];
+        if (dist2(b.x,b.y,c.x,c.y) <= (CHIP_SIZES[c.sizeIndex].r+2)**2) {
+          // Hit!
+          bullets.splice(j,1);
+          hit = true;
+          spawnExplosion(c.x,c.y, 18, 3.2);
+
+          // Split or remove
+          if (c.sizeIndex < CHIP_SIZES.length-1) {
+            const ni = c.sizeIndex + 1;
+            const ang = rand(0,TAU);
+            const sp = 1.3;
+            newChips.push({
+              x:c.x, y:c.y, vx:c.vx + Math.cos(ang)*sp, vy:c.vy + Math.sin(ang)*sp,
+              rot:rand(0,TAU), rv:rand(-0.04,0.04), sizeIndex:ni
+            });
+            newChips.push({
+              x:c.x, y:c.y, vx:c.vx + Math.cos(ang+Math.PI)*sp, vy:c.vy + Math.sin(ang+Math.PI)*sp,
+              rot:rand(0,TAU), rv:rand(-0.04,0.04), sizeIndex:ni
+            });
+          }
+          chips.splice(i,1);
+          break;
+        }
+      }
+      if (!hit) continue;
+    }
+    
+    // Chip-ship collisions
+    for (let i = chips.length - 1; i >= 0; i--) {
+      const c = chips[i];
+      const r = CHIP_SIZES[c.sizeIndex].r;
+      const rr = (r + ship.radius) ** 2;
+    
+      if (dist2(c.x, c.y, ship.x, ship.y) <= rr) {
+        // Damage + ship explosion
+        const dmg = DAMAGE_BY_NAME[CHIP_SIZES[c.sizeIndex].name] || 10;
+        hp = Math.max(0, hp - dmg);
+        hudHP.textContent = hp;
+        spawnExplosion(ship.x, ship.y, 24, 4);
+    
+        // Size-aware knockback (smaller chips -> smaller effect)
+        const a = Math.atan2(ship.y - c.y, ship.x - c.x);
+        const MAX_R = CHIP_SIZES[0].r; // largest chip radius (black)
+        const sizeScale = r / MAX_R;   // 1.0 down to ~0.33
+        const KNOCK_MIN = 1.2;
+        const KNOCK_MAX = 4.0;
+        const knock = KNOCK_MIN + (KNOCK_MAX - KNOCK_MIN) * sizeScale;
+        ship.vx += Math.cos(a) * knock;
+        ship.vy += Math.sin(a) * knock;
+    
+        // Nudge ship out of overlap
+        ship.x = wrap(ship.x + Math.cos(a) * (r + 20), W);
+        ship.y = wrap(ship.y + Math.sin(a) * (r + 20), H);
+    
+        // Chip behaves "as if shot": explode + split (if not smallest), then remove
+        spawnExplosion(c.x, c.y, 18, 3.2);
+        if (c.sizeIndex < CHIP_SIZES.length - 1) {
+          const ni = c.sizeIndex + 1;
+          const ang = rand(0, TAU);
+          const sp = 1.3;
+          newChips.push({
+            x: c.x, y: c.y,
+            vx: c.vx + Math.cos(ang) * sp,
+            vy: c.vy + Math.sin(ang) * sp,
+            rot: rand(0, TAU), rv: rand(-0.04, 0.04),
+            sizeIndex: ni
+          });
+          newChips.push({
+            x: c.x, y: c.y,
+            vx: c.vx + Math.cos(ang + Math.PI) * sp,
+            vy: c.vy + Math.sin(ang + Math.PI) * sp,
+            rot: rand(0, TAU), rv: rand(-0.04, 0.04),
+            sizeIndex: ni
+          });
+        }
+        chips.splice(i, 1);
+    
+        if (hp <= 0) {
+          gameOver = true;
+          gameOverEl.style.display = 'flex';
+          break;
+        }
+      }
+    }
+
+    if (newChips.length) chips.push(...newChips);
+	
+	// Win condition: clear all chips -> respawn wave
+    if (!gameOver && chips.length === 0 && !paused) {
+      paused = true;
+      winEl.style.display = 'flex';
+    }
+  }
+
+  // Render
+  function render() {
+    ctx.clearRect(0,0,W,H);
+
+    // Draw chips (with wrapping if near edges)
+    for (const arr of [chips]) {
+      for (const c of arr) {
+        drawChip(c);
+        // wrap visuals
+        const r = CHIP_SIZES[c.sizeIndex].r;
+        if (c.x < r) { ctx.save(); ctx.translate(W,0); drawChip({...c,x:c.x+W}); ctx.restore(); }
+        if (c.x > W-r) { ctx.save(); ctx.translate(-W,0); drawChip({...c,x:c.x-W}); ctx.restore(); }
+        if (c.y < r) { ctx.save(); ctx.translate(0,H); drawChip({...c,y:c.y+H}); ctx.restore(); }
+        if (c.y > H-r) { ctx.save(); ctx.translate(0,-H); drawChip({...c,y:c.y-H}); ctx.restore(); }
+      }
+    }
+
+    // Bullets
+    for (const b of bullets) drawSuit(b.suit, b.x, b.y, b.angle);
+
+    // Particles
+    drawParticles();
+
+    // Ship
+    drawShip(ship);
+  }
+
+  // Game loop
+  let lt = performance.now();
+  function frame(t) {
+    const dt = Math.min(0.033, (t - lt)/1000); lt = t;
+    if (!paused) update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  // Start
+  resetGame();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
