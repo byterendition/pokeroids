@@ -251,46 +251,77 @@
     ctx.restore();
   }
 
+  // Build a prerendered sprite for each chip size/color
+  const CHIP_SPRITES = CHIP_SIZES.map(makeChipSprite);
+  
+  function makeChipSprite(def) {
+    const r = def.r;
+    const pad = 4;                         // room for outer strokes
+    const S = Math.ceil((r + pad) * 2);    // sprite size in px
+    const off = document.createElement('canvas');
+    off.width = off.height = S;
+    const g = off.getContext('2d');
+  
+    g.translate(S/2, S/2);
+  
+    // Base disc
+    g.fillStyle = def.color;
+    g.beginPath(); g.arc(0,0,r,0,TAU); g.fill();
+  
+    // 6 white edge inlays (tangential rectangles)
+    g.fillStyle = '#fff';
+    const wedges = 6;
+    for (let i=0;i<wedges;i++){
+      g.save();
+      g.rotate(i * TAU / wedges);
+      const pieceRadialStart = r * 0.72;
+      const pieceRadialWidth = r * 0.26;
+      const pieceHeight      = r * 0.24;
+      g.fillRect(pieceRadialStart, -pieceHeight/2, pieceRadialWidth, pieceHeight);
+      g.restore();
+    }
+  
+    // Exact 12 dashes: draw 12 arc segments (no setLineDash)
+    const R = r * 0.55;
+    const dashLW = 3;
+    const dashCount = 12;
+    const dashAngle = TAU / 24;
+    g.save();
+    g.rotate(-Math.PI/2);                 // start at 12 o'clock
+    g.lineWidth = dashLW;
+    g.lineCap = 'butt';
+    g.strokeStyle = '#fff';
+    for (let k=0; k<dashCount; k++){
+      const start = k * 2 * dashAngle;
+      const end   = start + dashAngle;
+      g.beginPath();
+      g.arc(0, 0, R, start, end);
+      g.stroke();
+    }
+    g.restore();
+  
+    // Optional definition rings
+    g.lineWidth = 1.5;
+    g.strokeStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.arc(0,0,R,0,TAU); g.stroke();
+  
+    g.lineWidth = 4;
+    g.strokeStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.arc(0,0,r-2,0,TAU); g.stroke();
+  
+    return { canvas: off, size: S };
+  }
+  
   function drawChip(chip) {
-    const s = CHIP_SIZES[chip.sizeIndex];
-    const r = s.r;
-    const main = s.color, ring = s.ring || s.color;
-
+    const spr = CHIP_SPRITES[chip.sizeIndex];
+    const S = spr.size;
+  
     ctx.save();
     ctx.translate(chip.x, chip.y);
     ctx.rotate(chip.rot);
-
-    // Base disc
-    ctx.fillStyle = main;
-    ctx.beginPath(); ctx.arc(0,0,r,0,TAU); ctx.fill();
-
-    // white inner circle
-    ctx.fillStyle = '#eee';
-    ctx.beginPath(); ctx.arc(0,0,r*0.72,0,TAU); ctx.fill();
-
-    // inner dashed ring (like on real chips)
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#fff';
-    ctx.setLineDash([6,10]);
-    ctx.beginPath(); ctx.arc(0,0,r*0.55,0,TAU); ctx.stroke();
-    ctx.setLineDash([]);
-
-    // wedge rectangles around rim
-    const wedges = 8;
-    ctx.fillStyle = '#fff';
-    for (let i=0;i<wedges;i++){
-      const a = i*(TAU/wedges);
-      ctx.save();
-      ctx.rotate(a);
-      ctx.fillRect(r*0.80, -r*0.10, r*0.20, r*0.20);
-      ctx.restore();
-    }
-
-    // edge shading ring
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath(); ctx.arc(0,0,r-2,0,TAU); ctx.stroke();
-
+    // small snap can further reduce shimmer on some GPUs:
+    // ctx.translate(0.5, 0.5);
+    ctx.drawImage(spr.canvas, -S/2, -S/2);
     ctx.restore();
   }
 
@@ -385,7 +416,7 @@
       suit: suitName,
       img: suitImg,              // << store the image
       angle: rand(0, Math.PI*2), // random starting rotation
-      av: rand(-1.5, 1.5)        // gentle spin (rad/s)
+      av: rand(-4, 4)        // gentle spin (rad/s)
     });
   }
   btn.addEventListener('touchstart', e => { shoot(); e.preventDefault(); }, {passive:false});
@@ -582,16 +613,26 @@
     ctx.clearRect(0,0,W,H);
 
     // Draw chips (with wrapping if near edges)
-    for (const arr of [chips]) {
-      for (const c of arr) {
-        drawChip(c);
-        // wrap visuals
-        const r = CHIP_SIZES[c.sizeIndex].r;
-        if (c.x < r) { ctx.save(); ctx.translate(W,0); drawChip({...c,x:c.x+W}); ctx.restore(); }
-        if (c.x > W-r) { ctx.save(); ctx.translate(-W,0); drawChip({...c,x:c.x-W}); ctx.restore(); }
-        if (c.y < r) { ctx.save(); ctx.translate(0,H); drawChip({...c,y:c.y+H}); ctx.restore(); }
-        if (c.y > H-r) { ctx.save(); ctx.translate(0,-H); drawChip({...c,y:c.y-H}); ctx.restore(); }
-      }
+    for (const c of chips) {
+      drawChip(c);
+    
+      const r = CHIP_SIZES[c.sizeIndex].r;
+      const nearLeft   = c.x < r;
+      const nearRight  = c.x > W - r;
+      const nearTop    = c.y < r;
+      const nearBottom = c.y > H - r;
+    
+      // sides
+      if (nearLeft)   drawChip({ ...c, x: c.x + W });
+      if (nearRight)  drawChip({ ...c, x: c.x - W });
+      if (nearTop)    drawChip({ ...c, y: c.y + H });
+      if (nearBottom) drawChip({ ...c, y: c.y - H });
+    
+      // corners (when near two edges at once)
+      if (nearLeft && nearTop)       drawChip({ ...c, x: c.x + W, y: c.y + H });
+      if (nearLeft && nearBottom)    drawChip({ ...c, x: c.x + W, y: c.y - H });
+      if (nearRight && nearTop)      drawChip({ ...c, x: c.x - W, y: c.y + H });
+      if (nearRight && nearBottom)   drawChip({ ...c, x: c.x - W, y: c.y - H });
     }
 
     // Bullets
